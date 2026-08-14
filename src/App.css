@@ -4,13 +4,42 @@
   box-sizing: border-box;
 }
 
-html, body {
-  height: 100%;
+/* The shell is sized in dvh (see .app-container below). html and body must use
+   the same unit, or the difference between vh and dvh — exactly the height of
+   the browser's address bar — becomes a gap that the body background paints. */
+html {
+  min-height: 100%;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  background: #ECE5DD;
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* White, not beige. On a phone the shell fills the screen edge to edge, so
+     anything the body paints is a layout gap rather than decoration — keeping
+     it white means a future gap is invisible instead of an obvious band. */
+  background: #FFFFFF;
+}
+
+/* The beige is the mat around the phone-width frame on a wide screen. Below
+   the frame width there is no mat to draw, so it must not be painted at all. */
+@media (min-width: 520px) {
+  body {
+    background: #ECE5DD;
+  }
+}
+
+/* While the app shell is mounted it owns the whole viewport and scrolls
+   internally, so the document itself must not scroll: a scrollable document
+   makes the layout viewport taller than the visible one, and the bottom nav —
+   fixed to the layout viewport — drops below the bottom of the screen. The
+   sign-in screen renders outside .app-container and still needs to scroll,
+   hence the :has() guard rather than a blanket overflow:hidden. */
+html:has(.app-container),
+html:has(.app-container) body {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app-container {
@@ -143,7 +172,10 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #ECE5DD;
+  /* Every page paints its own background (white for forms, a gradient on Home,
+     the tiled pattern behind chat). Beige here only ever showed through the
+     padding-bottom reserved for the nav — as a band under the page. */
+  background: #FFFFFF;
 }
 
 .chat-header {
@@ -989,11 +1021,15 @@ body {
   --nav-h: 72px;
 }
 
-/* ── App shell with bottom nav ── */
+/* ── App shell with bottom nav ──
+   align-items must stay `stretch`. With `center`, a shell measured in dvh sat
+   centred inside a body measured in vh, and the leftover height showed up as
+   equal empty bands above and below the app — with the bottom nav pushed off
+   the bottom of the screen. Centre horizontally only. */
 body {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;
 }
 
 .app-container {
@@ -1027,12 +1063,18 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding-bottom: var(--nav-h);
+  /* Matches the nav's real height, gesture bar included, so the last row of a
+     page clears it instead of hiding behind it. */
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
 }
 
 /* ── Bottom Navigation ── */
 .bottom-nav {
-  height: var(--nav-h);
+  /* Grows by the home-indicator / gesture-bar inset and pads that space out,
+     so the icons stay reachable and the bar still reaches the screen edge
+     rather than leaving a strip of background beneath it. */
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
   background: #fff;
   border-top: 1px solid #e2edf2;
   display: grid;
@@ -4695,6 +4737,11 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  /* Sits between .main-content and every page, so it needs the same escape
+     from the flex `auto` minimums — otherwise a wide or tall page pushes the
+     frame instead of scrolling inside it. */
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   will-change: opacity, transform;
   animation: pageFade 0.26s cubic-bezier(0.33, 1, 0.68, 1);

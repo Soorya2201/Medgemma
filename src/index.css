@@ -35,13 +35,20 @@ body {
   justify-content: center;
   align-items: stretch;
   /* No min-width: a 280px folding-phone cover screen should reflow, not scroll. */
+  /* dvh, not vh: vh is the viewport with the address bar hidden, so on a phone
+     that is showing its address bar it overshoots the visible area by exactly
+     the bar's height — which the body background then paints as a gap. */
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
 }
 
 #root {
   width: 100%;
   min-width: 0;
+  /* Fills the body rather than hugging its content, so no strip of body
+     background can appear above or below the app. */
+  min-height: 100%;
   display: flex;
   justify-content: center;
 }
