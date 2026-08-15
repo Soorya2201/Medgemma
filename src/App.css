@@ -1018,6 +1018,9 @@ html:has(.app-container) body {
   --teal: #0188b4;
   --teal-soft: #78c0d7;
   --teal-light: #dff4f8;
+  /* The deep blue of the voice mic button. It is the ink colour for anything
+     sitting on the pale blue of the home gradient, where white washes out. */
+  --mic-blue: #1e5f9e;
   --nav-h: 72px;
 }
 
@@ -1679,10 +1682,14 @@ body {
   z-index: 1;
 }
 
+/* Lifted from 0.7 to 0.88 opacity: the tint is the same, but the tile now
+   reads as its own surface rather than a wash over the gradient, which is what
+   lets the blue ink below hold contrast (5.4:1) instead of white on pale blue. */
 .home-tile {
-  background: rgba(217, 241, 247, 0.7);
+  background: rgba(232, 247, 252, 0.88);
   border-radius: 12px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 3px 12px rgba(12, 74, 122, 0.1);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -1690,12 +1697,18 @@ body {
   align-items: flex-start;
   padding: 12px 14px;
   text-align: left;
-  transition: background 0.18s, transform 0.15s;
+  transition: background 0.18s, transform 0.15s, box-shadow 0.18s;
 }
 
 .home-tile:hover {
-  background: rgba(217, 241, 247, 0.9);
+  background: rgba(240, 251, 254, 0.96);
+  box-shadow: 0 6px 18px rgba(12, 74, 122, 0.16);
   transform: translateY(-2px);
+}
+
+.home-tile:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(12, 74, 122, 0.12);
 }
 
 .home-tile--tall {
@@ -1709,26 +1722,42 @@ body {
   width: 100%;
 }
 
+/* Solid white disc, blue glyph — the same chip the medication card above uses,
+   so the two rows read as one family. At 0.25 white the disc was invisible and
+   the glyph inside it disappeared into the tile. */
 .tile-icon {
   display: grid;
   place-items: center;
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.25);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--mic-blue);
   flex-shrink: 0;
 }
 
+/* Deliberately lighter than the label: it marks the tile as tappable without
+   competing with the thing the tile is actually called. */
 .tile-arrow {
-  color: #fff;
+  color: var(--mic-blue);
+  /* 0.7 is the lowest that still clears the 3:1 non-text contrast floor
+     against the tile. */
+  opacity: 0.7;
   font-size: 22px;
+  transition: opacity 0.18s, transform 0.18s;
+}
+
+.home-tile:hover .tile-arrow {
+  opacity: 1;
+  transform: translateX(2px);
 }
 
 .tile-label {
-  color: #fff;
+  color: var(--mic-blue);
   font-size: 14px;
-  font-weight: 500;
+  /* 600 rather than 500: blue on a pale tint needs slightly more weight than
+     white did to hold the same visual density. */
+  font-weight: 600;
   line-height: 1.3;
 }
 
@@ -3548,7 +3577,7 @@ body {
 }
 
 .voice-mic-btn {
-  background: #1e5f9e;
+  background: var(--mic-blue);
   border: none;
   border-radius: 50%;
   width: 108px;
