@@ -53,12 +53,24 @@ const NO_SPEECH_MS = 7000;   // nothing heard at all → re-prompt without a rou
 /** Two failed parses of the same question and we keep the raw words instead. */
 const MAX_RETRIES = 2;
 
+/**
+ * Attempts that produce nothing usable — silence, an unusably short clip, an
+ * empty transcript — before Bea stops reopening the mic by herself and waits
+ * to be tapped. Without a ceiling, a muted or blocked mic puts the interview in
+ * a loop: re-ask, listen, hear nothing, re-ask, forever.
+ */
+const MAX_NO_ANSWER = 2;
+
 type Phase =
   | 'idle'
   | 'listening'
   | 'transcribing'
   | 'thinking'
   | 'speaking'
+  // Bea asked, heard nothing usable twice, and has handed control back. The
+  // draft and the current question are still held, so tapping the mic picks up
+  // exactly where it left off rather than starting over.
+  | 'paused'
   | 'review'
   | 'saving'
   | 'done'
@@ -254,7 +266,9 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
   const mimeTypeRef = useRef('');
   const audioCtxRef = useRef<AudioContext | null>(null);
   const meterTimerRef = useRef<number | null>(null);
+  const hardStopRef = useRef<number | null>(null);
   const heardSpeechRef = useRef(false);
+  const noAnswerRef = useRef(0);
 
   useEffect(() => { mutedRef.current = muted; }, [muted]);
   useEffect(() => { primeVoices(); }, []);
@@ -273,6 +287,10 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
     if (meterTimerRef.current != null) {
       window.clearInterval(meterTimerRef.current);
       meterTimerRef.current = null;
+    }
+    if (hardStopRef.current != null) {
+      window.clearTimeout(hardStopRef.current);
+      hardStopRef.current = null;
     }
     audioCtxRef.current?.close().catch(() => {});
     audioCtxRef.current = null;
@@ -306,12 +324,13 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
   }, [releaseMic, teardownMeter]);
 
   // ── Listening ──────────────────────────────────────────────────────────────
-  const startMeter = useCallback((stream: MediaStream) => {
+  /** Returns false when WebAudio is unavailable, so there is no level to read. */
+  const startMeter = useCallback((stream: MediaStream): boolean => {
     let ctx: AudioContext;
     try {
       ctx = new AudioContext();
     } catch {
-      return;   // no WebAudio: fall back to the hard cap below
+      return false;   // no WebAudio: the caller falls back to the hard cap
     }
     audioCtxRef.current = ctx;
     const analyser = ctx.createAnalyser();
@@ -344,6 +363,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
       else if (heardSpeechRef.current && now - lastVoiceAt > SILENCE_MS && elapsed > MIN_LISTEN_MS) stopListening();
       else if (!heardSpeechRef.current && elapsed > NO_SPEECH_MS) stopListening();
     }, 100);
+    return true;
   }, [stopListening]);
 
   const startListening = useCallback(async () => {
@@ -368,7 +388,18 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
       recorderRef.current = recorder;
       recorder.start(250);
       setPhase('listening');
-      startMeter(stream);
+
+      const metered = startMeter(stream);
+      if (!metered) {
+        // No level to watch, so nothing can judge whether anyone spoke — assume
+        // they did and let the transcript be the judge. Claiming "I didn't hear
+        // anything" here would be a guess, and a self-fulfilling one.
+        heardSpeechRef.current = true;
+      }
+      // The meter is what normally closes the mic. It is also the thing that can
+      // be missing, so the cap belongs outside it — otherwise a browser without
+      // WebAudio records until the tab is closed.
+      hardStopRef.current = window.setTimeout(stopListening, MAX_LISTEN_MS + 500);
     } catch {
       // Don't leave the mic hot if the recorder itself failed to start.
       releaseMic();
@@ -378,7 +409,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
     // handleRecordingComplete is defined below; the ref-based state it reads is
     // always current, so the stale-closure warning doesn't apply here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [releaseMic, startMeter, teardownMeter]);
+  }, [releaseMic, startMeter, stopListening, teardownMeter]);
 
   // ── Conversation control ───────────────────────────────────────────────────
   const askSlot = useCallback(async (slot: Slot, forDraft: EntryDraft, override?: string) => {
@@ -436,6 +467,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
     slotRef.current = null;
     askedRef.current = [];
     retriesRef.current = 0;
+    noAnswerRef.current = 0;
     setDraft(null);
     setActiveSlot(null);
     setTurns([]);
@@ -453,6 +485,10 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
 
   /** Single entry point for anything the user "said" — spoken or tapped. */
   const handleAnswer = useCallback(async (text: string) => {
+    // Something came through, so the run of dead attempts is over. Tapping a
+    // chip counts too, which is why this sits here rather than next to the
+    // transcription that usually produces it.
+    noAnswerRef.current = 0;
     pushTurn('you', text);
     const current = draftRef.current;
 
@@ -498,23 +534,43 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
   // ── Recording → transcript ─────────────────────────────────────────────────
   const handleRecordingComplete = useCallback(async () => {
     const slot = slotRef.current;
-    const reAsk = (line: string) => {
-      if (slot && draftRef.current) void askSlot(slot, draftRef.current, line);
-      else {
-        setErrorMsg(line);
+    /**
+     * `retry` reopens the mic straight away; `paused` is said instead once the
+     * attempts are spent, and then Bea waits. The two are worded differently on
+     * purpose — telling someone to "tap the mic" while silently reopening it
+     * ourselves is what made the old loop so confusing to watch.
+     */
+    const reAsk = (retry: string, paused: string) => {
+      noAnswerRef.current += 1;
+      if (!slot || !draftRef.current) {
+        setErrorMsg(paused);
         setPhase('error');
+        return;
       }
+      if (noAnswerRef.current >= MAX_NO_ANSWER) {
+        pushTurn('bea', paused);
+        setPhase('paused');
+        void speak(paused, { muted: mutedRef.current });
+        return;
+      }
+      void askSlot(slot, draftRef.current, retry);
     };
 
     if (!heardSpeechRef.current) {
-      reAsk('I didn’t hear anything — tap the mic and try again.');
+      reAsk(
+        'I didn’t catch that — go ahead whenever you’re ready.',
+        'I still can’t hear anything. Check the mic isn’t muted, then tap it to try again.',
+      );
       return;
     }
 
     const mimeType = mimeTypeRef.current || 'audio/webm';
     const blob = new Blob(chunksRef.current, { type: mimeType });
     if (blob.size < 500) {
-      reAsk('That was too short to make out — could you say it again?');
+      reAsk(
+        'That was too short to make out — could you say it again?',
+        'I’m still not getting enough audio. Tap the mic and try once more.',
+      );
       return;
     }
 
@@ -523,7 +579,10 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
       const text = await transcribeWithGroq(blob, mimeType);
       if (abortedRef.current) return;
       if (!text) {
-        reAsk('I couldn’t make that out — could you say it again?');
+        reAsk(
+          'I couldn’t make that out — could you say it again?',
+          'I still couldn’t make that out. Tap the mic to try again.',
+        );
         return;
       }
       await handleAnswer(text);
@@ -532,7 +591,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
       setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setPhase('error');
     }
-  }, [askSlot, handleAnswer]);
+  }, [askSlot, handleAnswer, pushTurn]);
 
   // ── Saving ─────────────────────────────────────────────────────────────────
   const saveDraft = useCallback(async () => {
@@ -624,6 +683,17 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
       void startListening();
       return;
     }
+    if (phase === 'paused') {
+      // Resume the question that was already asked instead of repeating it, and
+      // give the attempts back so a second quiet moment doesn't end it instantly.
+      noAnswerRef.current = 0;
+      // The pause message may still be playing; an eager tap should cut it off
+      // rather than have Bea talk over the answer.
+      cancelSpeech();
+      if (slotRef.current && draftRef.current) void startListening();
+      else void beginSession();
+      return;
+    }
     if (phase === 'idle' || phase === 'done' || phase === 'error') {
       if (draftRef.current && phase === 'error' && slotRef.current) {
         void askSlot(slotRef.current, draftRef.current);
@@ -640,7 +710,11 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
   };
 
   const busy = phase === 'transcribing' || phase === 'thinking' || phase === 'saving';
-  const showChips = Boolean((phase === 'listening' || phase === 'speaking') && activeSlot?.chips && draft);
+  // Chips stay up while paused on purpose: if the mic is the thing that failed,
+  // tapping an answer is the way out of the interview.
+  const showChips = Boolean(
+    (phase === 'listening' || phase === 'speaking' || phase === 'paused') && activeSlot?.chips && draft,
+  );
   const stepsLeft = draft ? remainingCount(draft, askedRef.current) : 0;
 
   const statusLabel: Record<Phase, string> = {
@@ -649,6 +723,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
     transcribing: 'Getting that down…',
     thinking: 'Working out what to log…',
     speaking: 'Bea is speaking…',
+    paused: 'Tap the mic when you’re ready to answer',
     review: 'Check this over before it’s saved',
     saving: 'Saving to your health log…',
     done: 'Saved to your log',
@@ -738,7 +813,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
           </div>
         )}
 
-        {(phase === 'listening' || phase === 'speaking' || phase === 'thinking') && draft && stepsLeft > 0 && (
+        {(phase === 'listening' || phase === 'speaking' || phase === 'thinking' || phase === 'paused') && draft && stepsLeft > 0 && (
           <p className="voice-progress">{stepsLeft} quick question{stepsLeft === 1 ? '' : 's'} to go</p>
         )}
 
@@ -998,7 +1073,7 @@ export default function VoicePage({ onNavigate }: VoicePageProps) {
         </button>
       )}
 
-      {(phase === 'listening' || phase === 'speaking') && (
+      {(phase === 'listening' || phase === 'speaking' || phase === 'paused') && (
         <button className="voice-cancel-link" onClick={() => { stopListening(); cancelSpeech(); void cancelSession(); }}>
           Cancel
         </button>
