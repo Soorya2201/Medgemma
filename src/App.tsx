@@ -23,10 +23,11 @@ import PatientSwitcher from './components/PatientSwitcher';
 import PatientAvatar from './components/PatientAvatar';
 import { ActivePatientProvider } from './contexts/ActivePatientContext';
 import { useActivePatient } from './contexts/useActivePatient';
-import { ClipboardIcon, MedicalCrossIcon, MicIcon, SendIcon, StopIcon, ThermometerIcon, UtensilsIcon, VolumeIcon } from './components/icons';
+import { ArrowUpIcon, CameraIcon, ClipboardIcon, CloseIcon, MedicalCrossIcon, MicIcon, StopIcon, ThermometerIcon, UtensilsIcon, VolumeIcon } from './components/icons';
 import type { Page } from './types';
 import { toLocalDatetimeInputValue } from './utils/formatTime';
 import { buildSubjectBlock, composeContext, patientSeed, type Patient } from './utils/patients';
+import { extractTextFromFiles } from './utils/ocr';
 import {
   appendMessage,
   createThread,
@@ -413,6 +414,8 @@ function AppShell({ userId, userEmail }: AppShellProps) {
   // Image Upload (kept for future MedGemma re-enable — see MEDGEMMA_ENABLED)
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [readingImage, setReadingImage] = useState(false);
+  const chatImageInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const srRef = useRef<{ stop: () => void } | null>(null);
@@ -645,8 +648,17 @@ function AppShell({ userId, userEmail }: AppShellProps) {
   };
   const stopRecording = () => { srRef.current?.stop(); setIsRecording(false); };
 
-  // ── Image Handlers (kept for future MedGemma re-enable) ──
+  // ── Image handlers ──
+  // Nova Micro is text-only, so a photo reaches it as the text Textract reads
+  // off it — which is exactly what an ingredients label is.
   const clearImage = () => { setPendingImage(null); setImagePreview(null); };
+
+  const attachImage = (file: File) => {
+    setPendingImage(file);
+    const reader = new FileReader();
+    reader.onload = e => setImagePreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
 
   // ── SESSION CONTEXT UPDATER ───────────────────────────────────────────────────
   // Called after every exchange to keep the live session memory up to date.
@@ -899,9 +911,39 @@ function AppShell({ userId, userEmail }: AppShellProps) {
     // History snapshot already includes the current user turn (fixed above)
     const historySnapshot = updatedHistory.slice(-10);
     const contextSummary = buildContextSummary(sessionContext);
+
+    // A photo is answered from the text Textract reads off it. Nova Micro
+    // cannot see, so sending the image alone produced a confident reply about
+    // a label it had never read — worse than saying the photo was unreadable.
+    let labelText = '';
+    if (capturedImage && !MEDGEMMA_ENABLED) {
+      setReadingImage(true);
+      try {
+        labelText = await extractTextFromFiles([capturedImage]);
+      } catch (err) {
+        console.warn('Chat label OCR failed:', err);
+      } finally {
+        setReadingImage(false);
+      }
+    }
+
+    // Saying so is the honest answer; passing the photo through unread would
+    // have Bea answer about a label nobody has read.
+    if (capturedImage && !MEDGEMMA_ENABLED && !labelText) {
+      setLoading(false);
+      const miss = "I couldn't read any text in that photo. I read labels rather than see pictures — try a straight, well-lit shot of the ingredients list.";
+      injectBubbles(miss, 'nova', true);
+      void persistTurn('assistant', miss);
+      return;
+    }
+
     // The subject block leads the context: it decides who "you" refers to, and
     // every fact after it is read in that frame.
-    const novaContext = composeContext(buildSubjectBlock(activePatient), contextSummary);
+    const novaContext = composeContext(
+      buildSubjectBlock(activePatient),
+      contextSummary,
+      labelText ? `Text read from the photo the user just sent:\n${labelText}` : '',
+    );
 
     try {
       let responseText = '';
@@ -1105,22 +1147,64 @@ function AppShell({ userId, userEmail }: AppShellProps) {
             <button onClick={stopSpeaking}>Stop</button>
           </div>
         )}
+        {imagePreview && (
+          <div className="chat-attachment">
+            <img src={imagePreview} alt="Attached" className="chat-attachment-thumb" />
+            <span className="chat-attachment-note">
+              {readingImage ? 'Reading the label…' : 'Bea will read the text in this photo'}
+            </span>
+            <button className="chat-attachment-remove" onClick={clearImage} aria-label="Remove photo">
+              <CloseIcon />
+            </button>
+          </div>
+        )}
         <div className="input-bar">
-          <button onClick={isRecording ? stopRecording : startRecording}
-            className={`voice-btn ${isRecording ? 'recording' : ''}`}
-            title={isRecording ? 'Stop' : 'Voice input'}>
-            {isRecording ? <StopIcon /> : <MicIcon />}
-          </button>
           <input
-            type="text"
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && void sendMessage()}
-            placeholder={isRecording ? 'Listening...' : 'Type a message…'}
-            className="message-input"
+            ref={chatImageInputRef}
+            type="file"
+            accept="image/*"
+            onChange={e => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) attachImage(file);
+            }}
+            style={{ display: 'none' }}
           />
-          <button onClick={() => void sendMessage()} disabled={(!inputText.trim() && !pendingImage) || loading} className="send-btn">
-            <SendIcon />
+          <button
+            className="chat-attach-btn"
+            onClick={() => chatImageInputRef.current?.click()}
+            title="Attach a photo"
+            aria-label="Attach a photo"
+          >
+            <CameraIcon />
+          </button>
+
+          <div className="chat-input-pill">
+            <input
+              type="text"
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && void sendMessage()}
+              placeholder={isRecording ? 'Listening…' : 'How else can I help'}
+              className="message-input"
+            />
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`chat-mic-btn ${isRecording ? 'recording' : ''}`}
+              title={isRecording ? 'Stop' : 'Voice input'}
+              aria-label={isRecording ? 'Stop recording' : 'Voice input'}
+            >
+              {isRecording ? <StopIcon /> : <MicIcon />}
+            </button>
+          </div>
+
+          <button
+            onClick={() => void sendMessage()}
+            disabled={(!inputText.trim() && !pendingImage) || loading}
+            className="chat-send-btn"
+            aria-label="Send"
+          >
+            <ArrowUpIcon />
           </button>
         </div>
         <p className="chat-disclaimer">
