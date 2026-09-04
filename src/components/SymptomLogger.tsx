@@ -21,6 +21,8 @@ import { toLocalDatetimeInputValue } from '../utils/formatTime';
 import { COMMON_ALLERGENS } from '../utils/allergens';
 import { buildContainsSummary, detectAllergensInText } from '../utils/ocr';
 import { useActivePatient } from '../contexts/useActivePatient';
+import { listAll } from '../utils/listAll';
+import PatientSwitcher from './PatientSwitcher';
 
 const client = generateClient<Schema>();
 
@@ -209,7 +211,8 @@ interface SymptomLoggerPageProps {
 }
 
 export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLoggerPageProps) {
-  const { activeId } = useActivePatient();
+  const { activeId, activePatient } = useActivePatient();
+  const loggingFor = activePatient && !activePatient.isOwner ? activePatient.firstName : 'yourself';
   const now = new Date();
   const [activeTab, setActiveTab] = useState<'Exposure' | 'Symptom' | 'Medication' | 'History'>(initialTab ?? 'Exposure');
   const [entries, setEntries] = useState<HealthEntry[]>([]);
@@ -243,12 +246,13 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
   const [medTime, setMedTime] = useState(toLocalDatetimeInputValue(now));
 
   const [savedMsg, setSavedMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // ── Load entries from DynamoDB ──
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await client.models.HealthEntry.list();
+        const data = await listAll(nextToken => client.models.HealthEntry.list({ nextToken }));
         if (data) {
           // Scoped to whoever the switcher is on: a history mixing two children
           // is worse than useless when deciding what one of them reacted to.
@@ -284,10 +288,20 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
     })();
   }, [activeId]);
 
-  const addEntry = async (entry: Omit<HealthEntry, 'id'>) => {
+  // Validation speaks through the same banner as a save result, instead of a
+  // modal alert() the user has to dismiss before fixing the field.
+  const warn = (text: string) => {
+    setSavedMsg({ type: 'error', text });
+    setTimeout(() => setSavedMsg(null), 3000);
+  };
+
+  // Resolves true only once the row is actually in the table, so the caller
+  // knows whether it is safe to clear the form.
+  const addEntry = async (entry: Omit<HealthEntry, 'id'>): Promise<boolean> => {
+    setSaving(true);
     try {
       const tagsStr = entry.tags?.length ? JSON.stringify(entry.tags) : undefined;
-      const { data: created } = await client.models.HealthEntry.create({
+      const { data: created, errors } = await client.models.HealthEntry.create({
         // Without this every hand-logged entry was filed against the account
         // owner, and the clinician export then named the wrong patient.
         familyMemberId: activeId ?? null,
@@ -310,16 +324,26 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
         ocrNutrition: entry.ocrNutrition ?? undefined,
         containsSummary: entry.containsSummary ?? undefined,
       });
-      if (created) {
-        const newEntry: HealthEntry = { ...entry, id: created.id };
-        setEntries(prev => [...prev, newEntry]);
+      // Amplify reports a rejected write as an errors array rather than a
+      // throw, so an unchecked call reported "Saved!" over a row that was
+      // never written.
+      if (!created) {
+        console.error('Failed to create HealthEntry:', errors);
+        setSavedMsg({ type: 'error', text: 'Save failed — your entry is still here, try again' });
+        setTimeout(() => setSavedMsg(null), 4000);
+        return false;
       }
+      setEntries(prev => [...prev, { ...entry, id: created.id }]);
       setSavedMsg({ type: 'success', text: 'Saved!' });
       setTimeout(() => setSavedMsg(null), 2000);
+      return true;
     } catch (e) {
       console.error('Failed to create HealthEntry:', e);
-      setSavedMsg({ type: 'error', text: 'Save failed' });
-      setTimeout(() => setSavedMsg(null), 3000);
+      setSavedMsg({ type: 'error', text: 'Save failed — your entry is still here, try again' });
+      setTimeout(() => setSavedMsg(null), 4000);
+      return false;
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -359,7 +383,14 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
 
   return (
     <div className="page-container">
-      <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardIcon /> Health Logger</h2>
+      {/* The switcher rides in the title row because an entry filed against the
+          wrong child is expensive to notice later — who you are logging for has
+          to be readable at the moment you type, not one screen away. */}
+      <div className="logger-title-row">
+        <h2><ClipboardIcon /> Health Logger</h2>
+        <PatientSwitcher onManageFamily={onNavigate ? () => onNavigate('profile') : undefined} />
+      </div>
+      <p className="logger-subject-note">Logging for <strong>{loggingFor}</strong></p>
       {/* Hands off to the guided voice logger, which asks the follow-up
           questions and writes the entry itself. This used to be a dictation
           box that transcribed your words and then did nothing with them. */}
@@ -471,9 +502,9 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
 
           <div className="form-group"><label>Details</label><textarea value={expDetails} onChange={e => setExpDetails(e.target.value)} rows={2} style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
           <div className="form-group"><label>Date & Time</label><input type="datetime-local" value={expTime} onChange={e => setExpTime(e.target.value)} style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
-          <button className="save-btn" onClick={() => {
-            if (!expName.trim()) return alert('Please enter a name.');
-            addEntry({
+          <button className="save-btn" disabled={saving} onClick={async () => {
+            if (!expName.trim()) return warn('Please enter a name.');
+            const ok = await addEntry({
               type: 'Exposure',
               subtype: expType,
               name: expName,
@@ -486,8 +517,9 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
               ocrNutrition: expOcrNutrition || undefined,
               containsSummary: buildContainsSummary(`${expOcrIngredients} ${expOcrNutrition}`) || undefined,
             });
+            if (!ok) return;
             setExpName(''); setExpTags(''); setExpDetails(''); setExpQuantity(''); setExpOcrIngredients(''); setExpOcrNutrition('');
-          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircleIcon /> {expType === 'Meal' ? 'Log Food' : 'Log Exposure'}</button>
+          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircleIcon /> {saving ? 'Saving…' : expType === 'Meal' ? 'Log Food' : 'Log Exposure'}</button>
         </div>
       )}
 
@@ -507,12 +539,13 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
             <div className="form-group"><label>Date & Time</label><input type="datetime-local" value={symTime} onChange={e => setSymTime(e.target.value)} style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
           </div>
           <div className="form-group"><label>Notes</label><textarea value={symNotes} onChange={e => setSymNotes(e.target.value)} rows={2} style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
-          <button className="save-btn" onClick={() => {
-            const name = symName === 'Other' ? symCustom : symName;
-            if (!name) return alert('Please select a symptom.');
-            addEntry({ type: 'Symptom', name, severity: symSeverity, bodyArea: symBody, notes: symNotes, time: symTime });
+          <button className="save-btn" disabled={saving} onClick={async () => {
+            const name = symName === 'Other' ? symCustom.trim() : symName;
+            if (!name) return warn('Please select a symptom.');
+            const ok = await addEntry({ type: 'Symptom', name, severity: symSeverity, bodyArea: symBody, notes: symNotes, time: symTime });
+            if (!ok) return;
             setSymName(''); setSymCustom(''); setSymSeverity(5); setSymBody(''); setSymNotes('');
-          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircleIcon /> Log Symptom</button>
+          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircleIcon /> {saving ? 'Saving…' : 'Log Symptom'}</button>
         </div>
       )}
 
@@ -527,11 +560,12 @@ export default function SymptomLoggerPage({ initialTab, onNavigate }: SymptomLog
           <div className="form-group"><label>Reason</label><input type="text" value={medReason} onChange={e => setMedReason(e.target.value)} placeholder="e.g., Allergic reaction" style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
           <div className="form-group"><label>Notes</label><textarea value={medNotes} onChange={e => setMedNotes(e.target.value)} rows={2} style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
           <div className="form-group"><label>Date & Time</label><input type="datetime-local" value={medTime} onChange={e => setMedTime(e.target.value)} style={{ width: '100%', padding: 12, border: '1px solid #E9EDEF', borderRadius: 8 }} /></div>
-          <button className="save-btn" onClick={() => {
-            if (!medName.trim()) return alert('Please enter medication name.');
-            addEntry({ type: 'Medication', name: medName, dose: medDose, unit: medUnit, route: medRoute, reason: medReason, notes: medNotes, time: medTime });
+          <button className="save-btn" disabled={saving} onClick={async () => {
+            if (!medName.trim()) return warn('Please enter medication name.');
+            const ok = await addEntry({ type: 'Medication', name: medName, dose: medDose, unit: medUnit, route: medRoute, reason: medReason, notes: medNotes, time: medTime });
+            if (!ok) return;
             setMedName(''); setMedDose(''); setMedReason(''); setMedNotes('');
-          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircleIcon /> Log Medication</button>
+          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><CheckCircleIcon /> {saving ? 'Saving…' : 'Log Medication'}</button>
         </div>
       )}
 

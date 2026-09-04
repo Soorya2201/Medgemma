@@ -5,6 +5,7 @@ import type { Page } from '../types';
 import { toLocalDateInputValue } from '../utils/formatTime';
 import { COMMON_ALLERGENS } from '../utils/allergens';
 import { useActivePatient } from '../contexts/useActivePatient';
+import PatientSwitcher from './PatientSwitcher';
 import { buildContainsSummary, detectAllergensInText } from '../utils/ocr';
 import {
   CameraIcon,
@@ -163,6 +164,7 @@ export default function FoodTrackerPage({ onNavigate }: FoodTrackerPageProps) {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
         <span className="food-tracker-step-label">Step {step} of {TOTAL_STEPS}</span>
+        <PatientSwitcher />
       </div>
 
       {savedMsg && (
