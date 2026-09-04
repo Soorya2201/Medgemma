@@ -33,6 +33,7 @@ import PatientAvatar from './PatientAvatar';
 import { AQUATIC_AVATARS } from '../utils/avatars';
 import { useActivePatient } from '../contexts/useActivePatient';
 import { firstNameOf } from '../utils/patients';
+import { listAll } from '../utils/listAll';
 import {
   listAllThreads,
   loadMessages,
@@ -305,15 +306,15 @@ export default function ProfilePage() {
         }
 
         // Health entries
-        const { data: he } = await client.models.HealthEntry.list();
+        const he = await listAll(nextToken => client.models.HealthEntry.list({ nextToken }));
         if (he) setHealthEntries(he);
 
         // Exposure tests
-        const { data: et } = await client.models.ExposureTest.list();
+        const et = await listAll(nextToken => client.models.ExposureTest.list({ nextToken }));
         if (et) setExposureTests(et);
 
         // Family members
-        const { data: fm } = await client.models.FamilyMember.list();
+        const fm = await listAll(nextToken => client.models.FamilyMember.list({ nextToken }));
         if (fm) {
           setFamilyMembers(fm.map(m => ({
             id: m.id,

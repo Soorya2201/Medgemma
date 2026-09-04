@@ -8,6 +8,7 @@ import immunyLogo from '../assets/immuny-logo-header.png';
 import { buildReport, type ReportEntry, type ReportInput, type ReportPatient } from '../utils/clinicalReport';
 import { downloadVisitSummary, loadLogo, type LogoImage } from '../utils/exportPdf';
 import { getActivePatientId, setActivePatientId } from '../utils/activePatient';
+import { listAll } from '../utils/listAll';
 import { loadPatients, type Patient } from '../utils/patients';
 
 const client = generateClient<Schema>();
@@ -86,7 +87,7 @@ export default function ExportDataSheet({ onClose }: ExportDataSheetProps) {
     (async () => {
       setEntryCount(null);
       try {
-        const { data } = await client.models.HealthEntry.list();
+        const data = await listAll(nextToken => client.models.HealthEntry.list({ nextToken }));
         if (cancelled || !data) return;
         const { start, end } = periodBounds(period);
         const count = data.filter(e => {
@@ -110,13 +111,12 @@ export default function ExportDataSheet({ onClose }: ExportDataSheetProps) {
     try {
       if (!cachedLogo.current) cachedLogo.current = await loadLogo(immunyLogo);
 
-      const [{ data: entries }, { data: medications }, { data: medicationLogs }, { data: exposureTests }] =
-        await Promise.all([
-          client.models.HealthEntry.list(),
-          client.models.Medication.list(),
-          client.models.MedicationLog.list(),
-          client.models.ExposureTest.list(),
-        ]);
+      const [entries, medications, medicationLogs, exposureTests] = await Promise.all([
+        listAll(nextToken => client.models.HealthEntry.list({ nextToken })),
+        listAll(nextToken => client.models.Medication.list({ nextToken })),
+        listAll(nextToken => client.models.MedicationLog.list({ nextToken })),
+        listAll(nextToken => client.models.ExposureTest.list({ nextToken })),
+      ]);
 
       const { start, end } = periodBounds(period);
       const patientEntries: ReportEntry[] = (entries ?? [])

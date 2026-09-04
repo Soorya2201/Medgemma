@@ -4,6 +4,7 @@ import type { Schema } from '../../amplify/data/resource';
 import type { Page } from '../types';
 import { buildAdherenceGrid, computeTodayOrder } from '../utils/medications';
 import type { MedicationLogRow, MedicationRow } from '../utils/medications';
+import { listAll } from '../utils/listAll';
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -66,9 +67,9 @@ export default function MedicationsPage({ onNavigate }: MedicationsPageProps) {
   useEffect(() => {
     (async () => {
       try {
-        const [{ data: meds }, { data: logRows }] = await Promise.all([
-          client.models.Medication.list(),
-          client.models.MedicationLog.list(),
+        const [meds, logRows] = await Promise.all([
+          listAll(nextToken => client.models.Medication.list({ nextToken })),
+          listAll(nextToken => client.models.MedicationLog.list({ nextToken })),
         ]);
         if (meds) {
           setMedications(meds.map(m => ({

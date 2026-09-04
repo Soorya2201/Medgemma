@@ -5,6 +5,7 @@ import { AlertTriangleIcon, BarChartIcon, CheckCircleIcon, ClipboardIcon, CloseI
 import StatusMessage from './StatusMessage';
 import { toLocalDateInputValue } from '../utils/formatTime';
 import { getBig9Status } from '../utils/allergens';
+import { listAll } from '../utils/listAll';
 
 const client = generateClient<Schema>();
 
@@ -75,7 +76,7 @@ export default function ExposureTestingPage({ initialSection }: ExposureTestingP
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await client.models.ExposureTest.list();
+        const data = await listAll(nextToken => client.models.ExposureTest.list({ nextToken }));
         if (data) {
           const mapped: ExposureTest[] = data.map(d => ({
             id: d.id,

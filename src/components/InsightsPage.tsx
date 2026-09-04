@@ -7,6 +7,7 @@ import { buildAllergenChartData, buildDataSummary, parseInsights } from '../util
 import type { AllergenBar, InsightCard } from '../utils/parseInsights';
 import AllergenChart from './AllergenChart';
 import { useActivePatient } from '../contexts/useActivePatient';
+import { listAll } from '../utils/listAll';
 import { AlertTriangleIcon, ArrowRightIcon, BarChartIcon, ClipboardIcon, LightbulbIcon } from './icons';
 
 const client = generateClient<Schema>();
@@ -70,9 +71,9 @@ export default function InsightsPage({ onNavigate }: InsightsPageProps) {
     let cancelled = false;
     (async () => {
       try {
-        const [{ data: entries }, { data: tests }] = await Promise.all([
-          client.models.HealthEntry.list(),
-          client.models.ExposureTest.list(),
+        const [entries, tests] = await Promise.all([
+          listAll(nextToken => client.models.HealthEntry.list({ nextToken })),
+          listAll(nextToken => client.models.ExposureTest.list({ nextToken })),
         ]);
 
         if (cancelled) return;
