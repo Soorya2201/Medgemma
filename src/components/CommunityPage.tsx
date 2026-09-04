@@ -55,6 +55,8 @@ function PostCard({
   commentsError,
   commentDraft,
   onCommentDraftChange,
+  commentMode,
+  onCommentModeChange,
   onSubmitComment,
   commentSaving,
   onDeleteComment,
@@ -69,6 +71,8 @@ function PostCard({
   commentsError: boolean;
   commentDraft: string;
   onCommentDraftChange: (text: string) => void;
+  commentMode: PostMode;
+  onCommentModeChange: (mode: PostMode) => void;
   onSubmitComment: () => void;
   commentSaving: boolean;
   onDeleteComment: (commentId: string) => void;
@@ -176,6 +180,22 @@ function PostCard({
               </div>
             ))
           )}
+          <div className="comment-mode-row">
+            <button
+              type="button"
+              className={`comment-mode-btn ${commentMode === 'anonymous' ? 'active' : ''}`}
+              onClick={() => onCommentModeChange('anonymous')}
+            >
+              Anonymous
+            </button>
+            <button
+              type="button"
+              className={`comment-mode-btn ${commentMode === 'username' ? 'active' : ''}`}
+              onClick={() => onCommentModeChange('username')}
+            >
+              Respond as yourself
+            </button>
+          </div>
           <div className="community-comment-input-row">
             <input
               type="text"
@@ -209,6 +229,7 @@ export default function CommunityPage({ currentUserId, currentUsername }: Commun
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [disclaimerSource, setDisclaimerSource] = useState<'post' | 'comment'>('post');
   const [disclaimerUsername, setDisclaimerUsername] = useState('');
   const [communityUsername, setCommunityUsername] = useState<string | null>(
     currentUsername ?? null,
@@ -227,6 +248,7 @@ export default function CommunityPage({ currentUserId, currentUsername }: Commun
   const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
   const [commentsError, setCommentsError] = useState<Record<string, boolean>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [commentModeByPost, setCommentModeByPost] = useState<Record<string, PostMode>>({});
   const [commentSaving, setCommentSaving] = useState<Record<string, boolean>>({});
 
   // ── News ──
@@ -301,13 +323,14 @@ export default function CommunityPage({ currentUserId, currentUsername }: Commun
     if (!disclaimerUsername.trim()) return;
     setCommunityUsername(disclaimerUsername.trim());
     setShowDisclaimer(false);
-    setShowCreatePost(true);
+    if (disclaimerSource === 'post') setShowCreatePost(true);
   };
 
   const handleCreatePost = async () => {
     if (!postContent.trim()) return;
     const isAnon = postMode === 'anonymous';
     if (!isAnon && !communityUsername) {
+      setDisclaimerSource('post');
       setShowDisclaimer(true);
       return;
     }
@@ -419,12 +442,18 @@ export default function CommunityPage({ currentUserId, currentUsername }: Commun
   const submitComment = async (postId: string) => {
     const text = (commentDrafts[postId] ?? '').trim();
     if (!text) return;
+    const isAnon = (commentModeByPost[postId] ?? 'username') === 'anonymous';
+    if (!isAnon && !communityUsername) {
+      setDisclaimerSource('comment');
+      setShowDisclaimer(true);
+      return;
+    }
     setCommentSaving(prev => ({ ...prev, [postId]: true }));
     try {
       const { data: created } = await client.models.PostComment.create({
         postId,
-        authorUsername: communityUsername,
-        anonymous: !communityUsername,
+        authorUsername: isAnon ? null : communityUsername,
+        anonymous: isAnon,
         content: text,
       });
       if (created) {
@@ -593,6 +622,7 @@ export default function CommunityPage({ currentUserId, currentUsername }: Commun
             className="community-compose-prompt"
             onClick={() => {
               if (!communityUsername) {
+                setDisclaimerSource('post');
                 setShowDisclaimer(true);
               } else {
                 setShowCreatePost(true);
@@ -631,6 +661,8 @@ export default function CommunityPage({ currentUserId, currentUsername }: Commun
                 commentsError={!!commentsError[post.id]}
                 commentDraft={commentDrafts[post.id] ?? ''}
                 onCommentDraftChange={text => setCommentDrafts(prev => ({ ...prev, [post.id]: text }))}
+                commentMode={commentModeByPost[post.id] ?? 'username'}
+                onCommentModeChange={mode => setCommentModeByPost(prev => ({ ...prev, [post.id]: mode }))}
                 onSubmitComment={() => void submitComment(post.id)}
                 commentSaving={!!commentSaving[post.id]}
                 onDeleteComment={commentId => void deleteComment(post.id, commentId)}
