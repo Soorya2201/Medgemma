@@ -228,7 +228,7 @@ html:has(.app-container) body {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23ECE5DD" width="100" height="100"/><path d="M0 0L100 100M100 0L0 100" stroke="%23D1D7DB" stroke-width="0.5" opacity="0.1"/></svg>');
+  background: #fff;
   position: relative;
 }
 
@@ -452,29 +452,34 @@ html:has(.app-container) body {
   flex-shrink: 0;
 }
 
+/* Bubbles carry their meaning in fill, not in shadow: on a white page a
+   drop-shadowed card reads as a floating panel rather than as speech. */
 .message-content {
-  max-width: 65%;
-  padding: 8px 12px;
-  border-radius: 8px;
+  max-width: 76%;
+  padding: 12px 16px;
+  border-radius: 18px;
   position: relative;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 .message-bubble.assistant .message-content {
-  background: white;
-  border-radius: 0 8px 8px 8px;
+  background: #f1f3f4;
+  color: #1f2429;
+  border-radius: 18px 18px 18px 4px;
 }
 
+/* The user's own words are the blue ink, matching the send button and the
+   rest of the app's accent — it reads as "this is you" without a label. */
 .message-bubble.user .message-content {
-  background: #D9FDD3;
-  border-radius: 8px 0 8px 8px;
+  background: #e8f1fe;
+  color: #1668dc;
+  border-radius: 18px 18px 4px 18px;
 }
 
 .message-content p {
   margin: 0;
   font-size: 0.938rem;
-  line-height: 1.4;
-  color: #111B21;
+  line-height: 1.45;
+  color: inherit;
 }
 
 .message-time {
@@ -539,8 +544,9 @@ html:has(.app-container) body {
 
 /* Input Area */
 .chat-input-container {
-  background: #F0F2F5;
-  padding: 10px 16px;
+  background: #fff;
+  padding: 10px 16px 12px;
+  border-top: 1px solid #eef1f3;
 }
 
 .chat-disclaimer {
@@ -586,18 +592,135 @@ html:has(.app-container) body {
   align-items: center;
 }
 
+/* One pill holding the field and the mic, with send as a separate disc beside
+   it — the mic belongs to what you're typing, send is the action on it. */
+.chat-input-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  background: #f1f3f4;
+  border-radius: 999px;
+  padding: 4px 6px 4px 16px;
+}
+
 .message-input {
   flex: 1;
-  padding: 10px 16px;
+  min-width: 0;
+  padding: 10px 0;
   border: none;
-  border-radius: 24px;
-  background: white;
+  background: none;
   font-size: 0.938rem;
   font-family: inherit;
+  color: #1f2429;
+}
+
+.message-input::placeholder {
+  color: #8b969e;
 }
 
 .message-input:focus {
   outline: none;
+}
+
+.chat-mic-btn,
+.chat-attach-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #5b6b76;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chat-attach-btn {
+  width: 40px;
+  height: 40px;
+  background: #f1f3f4;
+}
+
+.chat-mic-btn:hover,
+.chat-attach-btn:hover {
+  background: #e4e8ea;
+  color: var(--teal);
+}
+
+.chat-mic-btn.recording {
+  background: #dc2626;
+  color: #fff;
+  animation: pulseRed 1.5s infinite;
+}
+
+.chat-send-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+}
+
+.chat-send-btn:hover:not(:disabled) {
+  background: #026e91;
+  transform: scale(1.05);
+}
+
+.chat-send-btn:disabled {
+  background: #eceff1;
+  color: #b0bbc2;
+  cursor: not-allowed;
+}
+
+/* Attached-photo strip, above the input while a photo is queued. */
+.chat-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 6px 10px 6px 6px;
+  background: #f1f3f4;
+  border-radius: 14px;
+}
+
+.chat-attachment-thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.chat-attachment-note {
+  flex: 1;
+  font-size: 12px;
+  color: #5b6b76;
+}
+
+.chat-attachment-remove {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #5b6b76;
+  cursor: pointer;
+}
+
+.chat-attachment-remove:hover {
+  background: #e4e8ea;
 }
 
 .voice-btn {
@@ -2192,6 +2315,258 @@ body {
   font-size: 13px;
   color: #667781;
   margin: 12px 0 0;
+}
+
+/* ── Health Logger header ── */
+.logger-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.logger-title-row h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.logger-subject-note {
+  font-size: 13px;
+  color: #667781;
+  margin: 6px 0 16px;
+}
+
+.logger-subject-note strong {
+  color: var(--teal);
+}
+
+/* ── Immuny Calendar ── */
+.cal-card {
+  margin: 4px 12px 14px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px 18px 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  z-index: 1;
+  position: relative;
+}
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #111;
+}
+
+.cal-title svg {
+  color: var(--teal);
+  flex-shrink: 0;
+}
+
+/* Steppers, not a dropdown: one year per press, so the year can never jump
+   somewhere the person didn't intend. Same pill shell as the Weekly/Monthly
+   toggle above it, so the two cards read as one family. */
+.cal-year-stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #eef2f5;
+  border-radius: 99px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.cal-step {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #667781;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cal-step:hover {
+  background: #fff;
+  color: var(--teal);
+}
+
+.cal-step:active {
+  transform: scale(0.92);
+}
+
+.cal-step:focus-visible {
+  outline: none;
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--teal-soft);
+}
+
+.cal-year {
+  min-width: 44px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2d37;
+  font-variant-numeric: tabular-nums;
+}
+
+/* pan-y keeps vertical page scrolling with the finger while horizontal drags
+   belong to the month swipe. */
+.cal-swipe {
+  touch-action: pan-y;
+  user-select: none;
+  border-radius: 12px;
+  outline: none;
+}
+
+.cal-swipe:focus-visible {
+  box-shadow: 0 0 0 2px var(--teal-soft);
+}
+
+.cal-month {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mic-blue);
+  margin-bottom: 8px;
+}
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 2px;
+}
+
+.cal-weekdays span {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 0 4px;
+}
+
+.cal-day-num {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Spill-over days from the neighbouring months stay legible but recede, so the
+   eye lands on the month actually being read. */
+.cal-day--out .cal-day-num {
+  color: #cbd5e1;
+}
+
+.cal-day--today .cal-day-num {
+  box-shadow: inset 0 0 0 1.5px var(--teal-soft);
+}
+
+/* A logged day is the one thing this calendar exists to show, so it gets the
+   filled disc and white numeral — the strongest contrast on a white card. */
+.cal-day--logged .cal-day-num {
+  background: var(--teal);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(1, 136, 180, 0.32);
+}
+
+.cal-day--logged.cal-day--today .cal-day-num {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--teal-soft);
+}
+
+/* Fixed height whether or not the day has dots, so no row shifts as months
+   change. */
+.cal-day-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 5px;
+}
+
+.cal-dot {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.cal-dot--food { background: var(--teal); }
+.cal-dot--symptom { background: #f5a742; }
+.cal-dot--medication { background: #8a6fe8; }
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eef2f5;
+}
+
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #667781;
+}
+
+.cal-caption {
+  font-size: 13px;
+  color: #667781;
+  margin: 8px 0 0;
+}
+
+/* The grid slides in from the side the swipe came from — the only cue that the
+   month moved, since the card has no month arrows. */
+.cal-grid--forward { animation: calSlideForward 0.22s ease-out; }
+.cal-grid--back { animation: calSlideBack 0.22s ease-out; }
+
+@keyframes calSlideForward {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes calSlideBack {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-grid--forward, .cal-grid--back { animation: none; }
 }
 
 /* ── Resource Hub & External Links (Home) ── */
@@ -5406,6 +5781,11 @@ body {
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+/* Pushes the patient switcher to the far end of the step header. */
+.food-tracker-header .patient-switcher {
+  margin-left: auto;
 }
 
 .food-tracker-back {

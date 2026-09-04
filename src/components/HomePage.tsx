@@ -5,8 +5,10 @@ import type { Page } from '../types';
 import beaImg from '../assets/bea.png';
 import { useActivePatient } from '../contexts/useActivePatient';
 import { getNextUpcoming } from '../utils/medications';
+import { listAll } from '../utils/listAll';
 import type { TodayDoseEntry } from '../utils/medications';
 import SymptomOverviewCard from './SymptomOverviewCard';
+import ImmunyCalendarCard from './ImmunyCalendarCard';
 import ProgressCard from './ProgressCard';
 import CheckInCard from './CheckInCard';
 import type { DueCheckIn } from './CheckInCard';
@@ -62,7 +64,7 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await client.models.HealthEntry.list();
+        const data = await listAll(nextToken => client.models.HealthEntry.list({ nextToken }));
         if (data) {
           // The home dashboard speaks for whoever the switcher is on.
           const mine = data.filter(d => (d.familyMemberId ?? undefined) === activeId);
@@ -94,8 +96,10 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await client.models.ExposureTest.list({ filter: { status: { eq: 'completed' } } });
-        setTestedAllergens((data ?? []).map(t => t.allergen));
+        const data = await listAll(nextToken =>
+          client.models.ExposureTest.list({ filter: { status: { eq: 'completed' } }, nextToken }),
+        );
+        setTestedAllergens(data.map(t => t.allergen));
       } catch (e) {
         console.warn('HomePage: failed to load exposure tests', e);
       }
@@ -105,9 +109,9 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
   useEffect(() => {
     (async () => {
       try {
-        const [{ data: meds }, { data: logs }] = await Promise.all([
-          client.models.Medication.list(),
-          client.models.MedicationLog.list(),
+        const [meds, logs] = await Promise.all([
+          listAll(nextToken => client.models.Medication.list({ nextToken })),
+          listAll(nextToken => client.models.MedicationLog.list({ nextToken })),
         ]);
         if (meds) {
           const mapped = meds.map(m => ({
@@ -223,6 +227,9 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
 
       {/* ── Symptom overview chart ── */}
       <SymptomOverviewCard entries={healthEntries} />
+
+      {/* ── Month calendar of everything logged ── */}
+      <ImmunyCalendarCard entries={healthEntries} />
 
       {/* ── Resource Hub & External Links ── */}
       <div className="home-resource-hub">
