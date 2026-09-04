@@ -5,6 +5,7 @@ import type { Page } from '../types';
 import { buildAdherenceGrid, computeTodayOrder } from '../utils/medications';
 import type { MedicationLogRow, MedicationRow } from '../utils/medications';
 import { listAll } from '../utils/listAll';
+import { useActivePatient } from '../contexts/useActivePatient';
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -39,6 +40,7 @@ interface MedicationsPageProps {
 }
 
 export default function MedicationsPage({ onNavigate }: MedicationsPageProps) {
+  const { activeId } = useActivePatient();
   const [medications, setMedications] = useState<MedicationRow[]>([]);
   const [logs, setLogs] = useState<MedicationLogRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -71,8 +73,12 @@ export default function MedicationsPage({ onNavigate }: MedicationsPageProps) {
           listAll(nextToken => client.models.Medication.list({ nextToken })),
           listAll(nextToken => client.models.MedicationLog.list({ nextToken })),
         ]);
-        if (meds) {
-          setMedications(meds.map(m => ({
+        // Scoped to whoever the switcher is on: one household's medication
+        // list is not one person's schedule.
+        const mine = meds.filter(m => (m.familyMemberId ?? undefined) === activeId);
+        const mineIds = new Set(mine.map(m => m.id));
+        if (mine) {
+          setMedications(mine.map(m => ({
             id: m.id,
             name: m.name,
             dose: m.dose ?? null,
@@ -86,7 +92,11 @@ export default function MedicationsPage({ onNavigate }: MedicationsPageProps) {
           })));
         }
         if (logRows) {
-          setLogs(logRows.map(l => ({ id: l.id, medicationId: l.medicationId, takenAt: l.takenAt })));
+          // A dose carries no patient of its own — it inherits the one on the
+          // medication it belongs to.
+          setLogs(logRows
+            .filter(l => mineIds.has(l.medicationId))
+            .map(l => ({ id: l.id, medicationId: l.medicationId, takenAt: l.takenAt })));
         }
       } catch (e) {
         console.warn('Failed to load medications:', e);
@@ -94,7 +104,7 @@ export default function MedicationsPage({ onNavigate }: MedicationsPageProps) {
         setLoaded(true);
       }
     })();
-  }, []);
+  }, [activeId]);
 
   const todayOrder = useMemo(() => computeTodayOrder(medications, logs, now), [medications, logs, now]);
   const adherenceGrid = useMemo(() => buildAdherenceGrid(medications, logs, 7, now), [medications, logs, now]);
@@ -121,6 +131,7 @@ export default function MedicationsPage({ onNavigate }: MedicationsPageProps) {
     setSaving(true);
     try {
       const { data: created } = await client.models.Medication.create({
+        familyMemberId: activeId ?? null,
         name: name.trim(),
         dose: dose || undefined,
         unit: unit || undefined,

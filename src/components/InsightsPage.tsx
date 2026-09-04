@@ -88,7 +88,7 @@ export default function InsightsPage({ onNavigate }: InsightsPageProps) {
             severity: e.severity ?? null,
             time: e.time,
           }));
-        const safeTests = (tests ?? []).map(t => ({
+        const safeTests = (tests ?? []).filter(t => (t.familyMemberId ?? undefined) === activeId).map(t => ({
           allergen: t.allergen,
           status: t.status,
           reactions: t.reactions ?? null,

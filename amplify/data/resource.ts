@@ -61,6 +61,11 @@ const schema = a.schema({
 
   // ── Medications (schedule) ────────────────────────────────────────────────
   Medication: a.model({
+    // Which patient this prescription belongs to; null = the profile owner.
+    // Without it a household shared one medication list, so switching to a
+    // child still showed the parent's doses — and the clinician export listed
+    // every person's medication under whoever it was generated for.
+    familyMemberId: a.string(),
     name: a.string().required(),
     dose: a.string(),
     unit: a.string(),
@@ -72,6 +77,9 @@ const schema = a.schema({
   }).authorization(allow => [allow.owner()]),
 
   // ── Medication doses actually taken ──────────────────────────────────────
+  // Deliberately carries no familyMemberId: a dose belongs to a medication,
+  // which belongs to a person. Storing the patient here too would let the two
+  // disagree, so readers scope logs by the medications they already filtered.
   MedicationLog: a.model({
     medicationId: a.string().required(),
     takenAt: a.string().required(),   // full ISO datetime
@@ -79,6 +87,9 @@ const schema = a.schema({
 
   // ── Exposure tests ────────────────────────────────────────────────────────
   ExposureTest: a.model({
+    // Which patient was tested; null = the profile owner. A tolerance result
+    // is about one person and must never be read as another's.
+    familyMemberId: a.string(),
     testName: a.string().required(),
     allergen: a.string().required(),
     amount: a.float(),

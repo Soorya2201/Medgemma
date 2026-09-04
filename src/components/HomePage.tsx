@@ -99,12 +99,14 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
         const data = await listAll(nextToken =>
           client.models.ExposureTest.list({ filter: { status: { eq: 'completed' } }, nextToken }),
         );
-        setTestedAllergens(data.map(t => t.allergen));
+        setTestedAllergens(
+          data.filter(t => (t.familyMemberId ?? undefined) === activeId).map(t => t.allergen),
+        );
       } catch (e) {
         console.warn('HomePage: failed to load exposure tests', e);
       }
     })();
-  }, []);
+  }, [activeId]);
 
   useEffect(() => {
     (async () => {
@@ -114,7 +116,9 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
           listAll(nextToken => client.models.MedicationLog.list({ nextToken })),
         ]);
         if (meds) {
-          const mapped = meds.map(m => ({
+          const mine = meds.filter(m => (m.familyMemberId ?? undefined) === activeId);
+          const mineIds = new Set(mine.map(m => m.id));
+          const mapped = mine.map(m => ({
             id: m.id,
             name: m.name,
             dose: m.dose ?? null,
@@ -126,14 +130,16 @@ export default function HomePage({ onNavigate, userName }: HomePageProps) {
             active: m.active ?? true,
             createdAt: m.createdAt ?? new Date().toISOString(),
           }));
-          const mappedLogs = (logs ?? []).map(l => ({ id: l.id, medicationId: l.medicationId, takenAt: l.takenAt }));
+          const mappedLogs = (logs ?? [])
+            .filter(l => mineIds.has(l.medicationId))
+            .map(l => ({ id: l.id, medicationId: l.medicationId, takenAt: l.takenAt }));
           setNextMed(getNextUpcoming(mapped, mappedLogs, new Date()));
         }
       } catch (e) {
         console.warn('HomePage: failed to load medications', e);
       }
     })();
-  }, []);
+  }, [activeId]);
 
   // Prefer the saved profile name; fall back to the local part of the login
   // email (never show the raw email — it reads oddly as a "name").

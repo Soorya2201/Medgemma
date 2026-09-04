@@ -123,15 +123,24 @@ export default function ExportDataSheet({ onClose }: ExportDataSheetProps) {
         .filter(e => (e.familyMemberId ?? undefined) === selected.id)
         .map(e => ({ ...e }));
 
+      // A clinical document is about exactly one person: every section is
+      // filtered to the selected patient, and a dose inherits the patient of
+      // the medication it was taken from.
+      const patientMedications = (medications ?? []).filter(
+        m => (m.familyMemberId ?? undefined) === selected.id,
+      );
+      const patientMedicationIds = new Set(patientMedications.map(m => m.id));
+
       const input: ReportInput = {
         patient: selected.patient,
         entries: patientEntries,
-        medications: (medications ?? []).map(m => ({ ...m })),
-        medicationLogs: (medicationLogs ?? []).map(l => ({ ...l })),
-        // Exposure tests aren't yet attributed to a specific family member in
-        // the data model, so a household with more than one patient sees every
-        // test on each export — noted here rather than silently mixing records.
-        exposureTests: (exposureTests ?? []).map(t => ({ ...t })),
+        medications: patientMedications.map(m => ({ ...m })),
+        medicationLogs: (medicationLogs ?? [])
+          .filter(l => patientMedicationIds.has(l.medicationId))
+          .map(l => ({ ...l })),
+        exposureTests: (exposureTests ?? [])
+          .filter(t => (t.familyMemberId ?? undefined) === selected.id)
+          .map(t => ({ ...t })),
         periodStart: start,
         periodEnd: end,
         generatedAt: new Date(),

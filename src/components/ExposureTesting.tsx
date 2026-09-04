@@ -6,6 +6,7 @@ import StatusMessage from './StatusMessage';
 import { toLocalDateInputValue } from '../utils/formatTime';
 import { getBig9Status } from '../utils/allergens';
 import { listAll } from '../utils/listAll';
+import { useActivePatient } from '../contexts/useActivePatient';
 
 const client = generateClient<Schema>();
 
@@ -44,6 +45,7 @@ interface ExposureTestingPageProps {
 }
 
 export default function ExposureTestingPage({ initialSection }: ExposureTestingPageProps) {
+  const { activeId } = useActivePatient();
   const now = new Date();
   const [activeTab, setActiveTab]       = useState<'new' | 'results' | 'history'>('new');
   const [checks, setChecks]             = useState<Record<string, boolean>>({});
@@ -78,7 +80,11 @@ export default function ExposureTestingPage({ initialSection }: ExposureTestingP
       try {
         const data = await listAll(nextToken => client.models.ExposureTest.list({ nextToken }));
         if (data) {
-          const mapped: ExposureTest[] = data.map(d => ({
+          // A tolerance result belongs to the person who was tested; pooling a
+          // household would read one child's reaction as another's.
+          const mapped: ExposureTest[] = data
+            .filter(d => (d.familyMemberId ?? undefined) === activeId)
+            .map(d => ({
             id: d.id,
             testName: d.testName,
             allergen: d.allergen,
@@ -103,7 +109,7 @@ export default function ExposureTestingPage({ initialSection }: ExposureTestingP
       }
       setLoaded(true);
     })();
-  }, []);
+  }, [activeId]);
 
   const allChecked = SAFETY_CHECKS.every(c => checks[c.id]);
   const toggleCheck = (id: string) => setChecks(p => ({ ...p, [id]: !p[id] }));
@@ -114,6 +120,7 @@ export default function ExposureTestingPage({ initialSection }: ExposureTestingP
     if (!testName.trim() || !allergen.trim()) return alert('Enter test name and allergen.');
     try {
       const { data: created } = await client.models.ExposureTest.create({
+        familyMemberId: activeId ?? null,
         testName,
         allergen,
         amount: parseFloat(amount),
