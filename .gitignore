@@ -17,6 +17,12 @@ dist-ssr
 .amplify/*.tsbuildinfo
 *.tsbuildinfo
 
+# Points at one specific deployed backend, so it is per-developer and
+# per-branch rather than shared. CI regenerates it during the build — see the
+# `ampx generate outputs` step in amplify.yml. Run `npx ampx sandbox` to get a
+# local copy.
+amplify_outputs.json
+
 # Build output and archives
 dist.zip
 
