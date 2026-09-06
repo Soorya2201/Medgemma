@@ -1078,10 +1078,21 @@ function AppShell({ userId, userEmail }: AppShellProps) {
             </div>
           </div>
         ) : (
-          messages.map(msg => (
+          messages.map((msg, i) => {
+            // One avatar per run of consecutive messages from the same speaker,
+            // anchored to the last bubble in the run so it sits beside the end
+            // of what Bea just said. While the typing bubble is up it owns the
+            // avatar, so the message above it gives it up.
+            const next = messages[i + 1];
+            const endsRun = !next
+              ? !loading
+              : next.role !== msg.role;
+            return (
             <div key={msg.id} className={`message-bubble ${msg.role}`}>
               {msg.role === 'assistant' && (
-                <img src={beaImg} alt="Bea" className="message-avatar" />
+                endsRun
+                  ? <img src={beaImg} alt="Bea" className="message-avatar" />
+                  : <span className="message-avatar-spacer" aria-hidden="true" />
               )}
               <div className="message-content">
                 {msg.imagePreview && (
@@ -1092,7 +1103,8 @@ function AppShell({ userId, userEmail }: AppShellProps) {
                 <span className="message-time">{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             </div>
-          ))
+            );
+          })
         )}
         {/* First run with more than one person on the account: choosing here is
             faster than opening the switcher, and makes the subject explicit

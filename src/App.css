@@ -452,6 +452,13 @@ html:has(.app-container) body {
   flex-shrink: 0;
 }
 
+/* Holds the avatar column open for the bubbles in a run that don't show one,
+   so a grouped reply stays flush with the one carrying the avatar. */
+.message-avatar-spacer {
+  width: 32px;
+  flex-shrink: 0;
+}
+
 /* Bubbles carry their meaning in fill, not in shadow: on a white page a
    drop-shadowed card reads as a floating panel rather than as speech. */
 .message-content {
